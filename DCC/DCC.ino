@@ -10,15 +10,15 @@
 
   Pinouts:
   LCD:
-  ╔═════════════════════════════╗
-  ║                                   Data6 | Data7  ║
-  ║ Backlight +                       Data4 | Data5  ║
-  ║                                   Data2 | Data3  ║
-  ║            LCD display away       Data0 | Data1  ║
-  ║                              Read/Write | Enable ║
-  ║ Backlight -                    Contrast |  RS    ║
-  ║                                     +5V | GND    ║
-  ╚═════════════════════════════╝
+  ╔═══════════════════════════════════════════════════╗
+  ║                                    Data6 | Data7  ║
+  ║                                    Data4 | Data5  ║
+  ║                                    Data2 | Data3  ║
+  ║             LCD display away       Data0 | Data1  ║
+  ║                               Read/Write | Enable ║
+  ║                                 Contrast |  RS    ║
+  ║                                      +5V | GND    ║
+  ╚═══════════════════════════════════════════════════╝
 
   Pin definition arduino nano:
   A4 <- Potentiometer 1
