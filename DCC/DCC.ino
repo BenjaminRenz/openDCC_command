@@ -129,8 +129,8 @@ void print_string_LCD(char a[], byte address) {
 
 byte refresh_Poti() {
   byte return_changed = 0x00;
-  static unsigned int lastPotiVal[16] = {0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000};
-  static byte deadzone_and_num = 0x00; //first two bit are the oldest "lastPotiVal"-offset (0-3) , lower four bit are deadzone came from below(0) above(1)
+  static unsigned int lastPotiVal[64] = {0};
+  static byte deadzone_and_num = 0x00; //first four bit are the oldest "lastPotiVal"-offset (0-15) , lower four bit are deadzone came from below(0) above(1)
   unsigned int poti_val = 0x0000;
   for (byte LOC_num = 0; LOC_num < 4; LOC_num++) {
     //read from selected Potentiometer
@@ -149,46 +149,46 @@ byte refresh_Poti() {
         break;
     }
     //calculating mean
-    for (byte index = 1; index < 4; index++) {
-      lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 6) + 4 * LOC_num] + lastPotiVal[(((deadzone_and_num >> 6) + index) % 4) + 4 * LOC_num];
+    for (byte index = 1; index < 16; index++) {
+      lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] + lastPotiVal[(((deadzone_and_num >> 4) + index) % 16) + (16 * LOC_num)];
     }
-    lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] + poti_val;
-    lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] / 5;
+    lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] + poti_val;
+    lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] / 17;
 
     //direction check
-    if (lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] > 511) {
-      lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] & 0x01FF; //Cut off first bit from adc
+    if (lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] > 511) {
+      lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] & 0x01FF; //Cut off first bit from adc
       LOC_function_and_dir[LOC_num] = LOC_function_and_dir[LOC_num] | 0x20; //Set direction to forward
     } else {
-      lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = 511 - lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)];
+      lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = 511 - lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)];
       LOC_function_and_dir[LOC_num] = LOC_function_and_dir[LOC_num] & 0xDF; //Set direction to backward
     }
 
     //Deadzone check
-    if (((lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)]) % 4) == 1) {
+    if (((lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)]) % 4) == 1) {
       deadzone_and_num = deadzone_and_num & (~(0x01 << LOC_num)); //clear bit because e came from below to deadzone (2)
-    } else if (((lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)]) % 4) == 2) {
-      if (deadzone_and_num & (0x01 << LOC_num) > 1) {
-        if (lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] < 509) {
-          lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] + 4;
+    } else if (((lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)]) % 4) == 2) {
+      if ((deadzone_and_num & (0x01 << LOC_num)) != 0) {
+        if (lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] < 509) {
+          lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] + 4;
         }
       }
-    } else if (((lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)]) % 4) == 3) {
+    } else if (((lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)]) % 4) == 3) {
       deadzone_and_num = deadzone_and_num | (0x01 << LOC_num);
-      if (lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] < 509) {
-        lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] + 4;
+      if (lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] < 509) {
+        lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] + 4;
       }
     }
     //divide by 4
-    lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] / 4;
+    lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] / 4;
 
     //eliminate 1
-    if (lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] == 1) {      //1 would be emergency stop + increases deadzone by x3
-      lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = 0;
+    if (lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] == 1) {      //1 would be emergency stop + increases deadzone by x3
+      lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = 0;
     }
-    if ((lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)]) != LOC_speed[LOC_num]) { //check if meassured value has changed from stored value
+    if ((lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)]) != LOC_speed[LOC_num]) { //check if meassured value has changed from stored value
       return_changed = return_changed | ((0x01) << LOC_num); //update the return byte
-      LOC_speed[LOC_num] = lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)];  //if so update the value
+      LOC_speed[LOC_num] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)];  //if so update the value
       DCC_command_buffer[0] = 'X';
       DCC_command_buffer[1] = 0x80; //Loc command
       DCC_command_buffer[2] = (byte)(LOC_address[LOC_num] & 0x00FF);
@@ -208,12 +208,12 @@ byte refresh_Poti() {
       }
       digitalWrite(LED_orange, HIGH);
     }
-    lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = poti_val;
+    lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = poti_val;
   }
-  if ((deadzone_and_num >> 6) == 3) {
-    deadzone_and_num = deadzone_and_num & 0x3F;
+  if ((deadzone_and_num >> 4) == 15) {
+    deadzone_and_num = deadzone_and_num & 0x0F;
   } else {
-    deadzone_and_num = deadzone_and_num + 0x40;
+    deadzone_and_num = deadzone_and_num + 0x10;
   }
   return return_changed;
 }
