@@ -393,8 +393,7 @@ void Menu_ChangeFunction() {
         DCC_command_buffer[3] = (byte)((LOC_address[SelectedLOC] & 0xFF00) >> 8);
         DCC_command_buffer[4] = (LOC_speed[SelectedLOC]);
         DCC_command_buffer[5] = LOC_function_and_dir[SelectedLOC];
-        DCC_command_buffer[7] = '\r';
-        Serial.write(DCC_command_buffer, 8);
+        Serial.write(DCC_command_buffer, 6);
         refresh = 0x01;
         break;
       default:
