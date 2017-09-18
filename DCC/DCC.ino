@@ -32,8 +32,6 @@
   D6 -> LCD RS
   D7 -> LCD Enable
 */
-#define Response false
-
 #include <EEPROM.h>
 #define Poti1 A0
 #define Poti2 A1
@@ -80,41 +78,21 @@ unsigned int tenthpower(byte n) {
 
 void Menu_Stop() {
   LCD_blink_off();
-  while (Response) {
-    digitalWrite(LED_orange, LOW);
-    Serial.write("x\xA5");       //write "Halt"-coammand to DCC
-    digitalWrite(LED_orange, HIGH);
-    if (Serial.available() != 0) {
-      if (Serial.read() == 0) {
-        break;
-      } else {
-        print_string_LCD("RX Error at Halt", 0x80);
-        delay(500);
-      }
-    }
-  }
+  digitalWrite(LED_orange, LOW);
+  Serial.write("x\xA6");       //write "Halt"-coammand to DCC
+  digitalWrite(LED_orange, HIGH);
   digitalWrite(LED_green, HIGH);
   digitalWrite(LED_red, LOW);
   LCD_clear();
   print_string_LCD("!Emergency Stop!", 0x80);
   print_string_LCD("Exit->STOPbutton", 0xC0);
   while (getButtonInput() != AliasStop) {}
-  while (Response) {
-    digitalWrite(LED_orange, LOW);
-    Serial.write("x\xA7");       //write "Go"-coammand to DCC
-    digitalWrite(LED_orange, HIGH);
-    if (Serial.available() != 0) {
-      if (Serial.read() == 0) {
-        break;
-      } else {
-        print_string_LCD("RX Error at Go", 0x80);
-        delay(500);
-      }
-    }
-  }
+  digitalWrite(LED_orange, LOW);
+  Serial.write("x\xA7");       //write "Go"-coammand to DCC
+  digitalWrite(LED_orange, HIGH);
   LCD_clear();
-  digitalWrite(LED_red, LOW);
-  digitalWrite(LED_green, HIGH);
+  digitalWrite(LED_green, LOW);
+  digitalWrite(LED_red, HIGH);
   LCD_clear();
   LCD_blink_on();
   return;
@@ -150,45 +128,44 @@ byte refresh_Poti() {
     }
     //calculating mean
     for (byte index = 1; index < 16; index++) {
-      lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] + lastPotiVal[(((deadzone_and_num >> 4) + index) % 16) + (16 * LOC_num)];
+      lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] = lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] + lastPotiVal[((((deadzone_and_num >> 4) & 0x0F) + index) % 16) + (16 * LOC_num)];
     }
-    lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] + poti_val;
-    lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] / 17;
-
+    lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] = lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] + poti_val;
+    lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] = lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] / 17;
     //direction check
-    if (lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] > 511) {
-      lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] & 0x01FF; //Cut off first bit from adc
+    if (lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] > 511) {
+      lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] = lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] & 0x01FF; //Cut off first bit from adc
       LOC_function_and_dir[LOC_num] = LOC_function_and_dir[LOC_num] | 0x20; //Set direction to forward
     } else {
-      lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = 511 - lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)];
+      lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] = 511 - lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)];
       LOC_function_and_dir[LOC_num] = LOC_function_and_dir[LOC_num] & 0xDF; //Set direction to backward
     }
-
     //Deadzone check
-    if (((lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)]) % 4) == 1) {
+    if (((lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)]) % 4) == 1) {
       deadzone_and_num = deadzone_and_num & (~(0x01 << LOC_num)); //clear bit because e came from below to deadzone (2)
-    } else if (((lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)]) % 4) == 2) {
+    } else if (((lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)]) % 4) == 2) {
       if ((deadzone_and_num & (0x01 << LOC_num)) != 0) {
-        if (lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] < 509) {
-          lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] + 4;
+        if (lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] < 509) {
+          lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] = lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] + 4;
         }
       }
-    } else if (((lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)]) % 4) == 3) {
+    } else if (((lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)]) % 4) == 3) {
       deadzone_and_num = deadzone_and_num | (0x01 << LOC_num);
-      if (lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] < 509) {
-        lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] + 4;
+      if (lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] < 509) {
+        lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] = lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] + 4;
       }
     }
+
     //divide by 4
-    lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] / 4;
+    lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] = lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] / 4;
 
     //eliminate 1
-    if (lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] == 1) {      //1 would be emergency stop + increases deadzone by x3
-      lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = 0;
+    if (lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] == 1) {    //1 would be emergency stop + increases deadzone by x3
+      lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] = 0;
     }
-    if ((lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)]) != LOC_speed[LOC_num]) { //check if meassured value has changed from stored value
+    if (lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] != LOC_speed[LOC_num]) { //check if meassured value has changed from stored value
       return_changed = return_changed | ((0x01) << LOC_num); //update the return byte
-      LOC_speed[LOC_num] = lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)];  //if so update the value
+      LOC_speed[LOC_num] = lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)]; //if so update the value
       DCC_command_buffer[0] = 'X';
       DCC_command_buffer[1] = 0x80; //Loc command
       DCC_command_buffer[2] = (byte)(LOC_address[LOC_num] & 0x00FF);
@@ -198,19 +175,10 @@ byte refresh_Poti() {
       digitalWrite(LED_orange, LOW);
       Serial.write(DCC_command_buffer, 6);
       digitalWrite(LED_orange, HIGH);
-      if (Serial.available() != 0 && Response) {
-        if (Serial.read() == 0) {
-          break;
-        } else {
-          print_string_LCD("RX Error LOC", 0x80);
-          delay(500);
-        }
-      }
-      digitalWrite(LED_orange, HIGH);
     }
-    lastPotiVal[(deadzone_and_num >> 4) + (16 * LOC_num)] = poti_val;
+    lastPotiVal[((deadzone_and_num >> 4) & 0x0F) + (16 * LOC_num)] = poti_val;
   }
-  if ((deadzone_and_num >> 4) == 15) {
+  if (((deadzone_and_num >> 4) & 0x0F) == 15) {
     deadzone_and_num = deadzone_and_num & 0x0F;
   } else {
     deadzone_and_num = deadzone_and_num + 0x10;
@@ -683,6 +651,7 @@ void setup() {
     update_LOC_icon(LOC_num);                                                                         //load LOC icons
     EEPROM_address = EEPROM_address + 2;                                                              //increment to next loco (address has 2 bytes (+2))
   }
+  //noInterrupts();
   Menu_Stop();
   Menu_None();
 }
@@ -775,6 +744,4 @@ void Menu_None() {
     }
   }
 }
-void loop() {
 
-}
