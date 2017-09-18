@@ -21,8 +21,8 @@
   ╚═══════════════════════════════════════════════════╝
 
   Pin definition arduino nano:
-  A4 <- Potentiometer 1
-  A5 <- Potentiometer 2
+  A0 <- Potentiometer 1
+  A1 <- Potentiometer 2
   A6 <- Potentiometer 3
   A7 <- Potentiometer 4
   D2 -> LCD Data4
