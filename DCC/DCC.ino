@@ -21,8 +21,8 @@
   ╚═════════════════════════════╝
 
   Pin definition arduino nano:
-  A0 <- Potentiometer 1
-  A1 <- Potentiometer 2
+  A4 <- Potentiometer 1
+  A5 <- Potentiometer 2
   A6 <- Potentiometer 3
   A7 <- Potentiometer 4
   D2 -> LCD Data4
@@ -32,6 +32,8 @@
   D6 -> LCD RS
   D7 -> LCD Enable
 */
+#define Response false
+
 #include <EEPROM.h>
 #define Poti1 A0
 #define Poti2 A1
@@ -43,9 +45,9 @@
 #define ButtonRight 10
 #define ButtonLeft 11
 #define ButtonStop 12
-#define LEDG1 A3
-#define LEDG2 A4
-#define LEDO 13
+#define LED_orange A2
+#define LED_green A3
+#define LED_red 13
 
 #define AliasStop 1
 #define AliasMenu 2
@@ -53,7 +55,7 @@
 #define AliasLeft 8
 #define AliasRight 16
 
-#define Warmup 300
+#define Warmup 100
 
 #define LCD_clear(); LCD_write(0x01,false);
 #define LCD_home();  LCD_write(0x03,false);
@@ -62,7 +64,7 @@
 #define LCD_blink_on(); LCD_write(0x0E,false);
 #define LCD_blink_off(); LCD_write(0x0C,false);
 
-byte LOC_speed[4] = {0x00, 0x00, 0x00, 0x00}; //first bit is forward backward //TODO change?
+byte LOC_speed[4] = {0x00, 0x00, 0x00, 0x00};
 unsigned int LOC_address[4] = {0x0000, 0x0000, 0x0000, 0x0000};
 byte LOC_function_and_dir[4] = {0xC0, 0xC0, 0xC0, 0xC0};
 char DCC_command_buffer[63];
@@ -78,25 +80,41 @@ unsigned int tenthpower(byte n) {
 
 void Menu_Stop() {
   LCD_blink_off();
-  Serial.write("X\xA5\r");       //write STOP coammand to DCC
-  while (Serial.available() < 2) {} //wait for answer
-  if (!Serial.readString().equals("0\r")) {
-    Serial.write("UnknownResponse"); //TODO implement propper error routine
+  while (Response) {
+    digitalWrite(LED_orange, LOW);
+    Serial.write("x\xA5");       //write "Halt"-coammand to DCC
+    digitalWrite(LED_orange, HIGH);
+    if (Serial.available() != 0) {
+      if (Serial.read() == 0) {
+        break;
+      } else {
+        print_string_LCD("RX Error at Halt", 0x80);
+        delay(500);
+      }
+    }
   }
-  digitalWrite(LEDG2, HIGH);
-  digitalWrite(LEDO, LOW);
+  digitalWrite(LED_green, HIGH);
+  digitalWrite(LED_red, LOW);
   LCD_clear();
   print_string_LCD("!Emergency Stop!", 0x80);
   print_string_LCD("Exit->STOPbutton", 0xC0);
   while (getButtonInput() != AliasStop) {}
-  Serial.write("X\xA7\r");       //write XHalt coammand to DCC
-  while (Serial.available() < 2) {} //wait for answer
-  if (!Serial.readString().equals("0\r")) {
-    Serial.write("UnknownResponse"); //TODO implement propper error routine
+  while (Response) {
+    digitalWrite(LED_orange, LOW);
+    Serial.write("x\xA7");       //write "Go"-coammand to DCC
+    digitalWrite(LED_orange, HIGH);
+    if (Serial.available() != 0) {
+      if (Serial.read() == 0) {
+        break;
+      } else {
+        print_string_LCD("RX Error at Go", 0x80);
+        delay(500);
+      }
+    }
   }
   LCD_clear();
-  digitalWrite(LEDO, HIGH);
-  digitalWrite(LEDG2, LOW);
+  digitalWrite(LED_red, LOW);
+  digitalWrite(LED_green, HIGH);
   LCD_clear();
   LCD_blink_on();
   return;
@@ -109,11 +127,14 @@ void print_string_LCD(char a[], byte address) {
   }
 }
 
-byte refresh_Poti() { //TODO implement median or simmilar routine to make sure that potentiometer does not fluctuate maybe with modulo and a byte which track if incresed or decreased last time
+byte refresh_Poti() {
   byte return_changed = 0x00;
+  static unsigned int lastPotiVal[16] = {0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000};
+  static byte deadzone_and_num = 0x00; //first two bit are the oldest "lastPotiVal"-offset (0-3) , lower four bit are deadzone came from below(0) above(1)
   unsigned int poti_val = 0x0000;
   for (byte LOC_num = 0; LOC_num < 4; LOC_num++) {
-    switch (LOC_num) {                  //read from dedicated Potentiometer
+    //read from selected Potentiometer
+    switch (LOC_num) {
       case 0:
         poti_val = analogRead(Poti1);
         break;
@@ -127,35 +148,75 @@ byte refresh_Poti() { //TODO implement median or simmilar routine to make sure t
         poti_val = analogRead(Poti4);
         break;
     }
-    if (poti_val > 511) {
-      poti_val = poti_val & 0x01FF; //Cut off first bit from adc
+    //calculating mean
+    for (byte index = 1; index < 4; index++) {
+      lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 6) + 4 * LOC_num] + lastPotiVal[(((deadzone_and_num >> 6) + index) % 4) + 4 * LOC_num];
+    }
+    lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] + poti_val;
+    lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] / 5;
+
+    //direction check
+    if (lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] > 511) {
+      lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] & 0x01FF; //Cut off first bit from adc
       LOC_function_and_dir[LOC_num] = LOC_function_and_dir[LOC_num] | 0x20; //Set direction to forward
     } else {
-      poti_val = 511 - poti_val;
-      LOC_function_and_dir[LOC_num] = LOC_function_and_dir[LOC_num] & 0xBF; //Set direction to backward
+      lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = 511 - lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)];
+      LOC_function_and_dir[LOC_num] = LOC_function_and_dir[LOC_num] & 0xDF; //Set direction to backward
     }
-    poti_val = poti_val / 4;
-    if (poti_val == 1) {      //1 would be emergency stop + increases deadzone by x3
-      poti_val = 0;
+
+    //Deadzone check
+    if (((lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)]) % 4) == 1) {
+      deadzone_and_num = deadzone_and_num & (~(0x01 << LOC_num)); //clear bit because e came from below to deadzone (2)
+    } else if (((lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)]) % 4) == 2) {
+      if (deadzone_and_num & (0x01 << LOC_num) > 1) {
+        if (lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] < 509) {
+          lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] + 4;
+        }
+      }
+    } else if (((lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)]) % 4) == 3) {
+      deadzone_and_num = deadzone_and_num | (0x01 << LOC_num);
+      if (lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] < 509) {
+        lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] + 4;
+      }
     }
-    if ((poti_val) != LOC_speed[LOC_num]) { //check if meassured value has changed from stored value
+    //divide by 4
+    lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] / 4;
+
+    //eliminate 1
+    if (lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] == 1) {      //1 would be emergency stop + increases deadzone by x3
+      lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = 0;
+    }
+    if ((lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)]) != LOC_speed[LOC_num]) { //check if meassured value has changed from stored value
       return_changed = return_changed | ((0x01) << LOC_num); //update the return byte
-      LOC_speed[LOC_num] = poti_val;  //if so update the value
+      LOC_speed[LOC_num] = lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)];  //if so update the value
       DCC_command_buffer[0] = 'X';
       DCC_command_buffer[1] = 0x80; //Loc command
-      DCC_command_buffer[2] = (LOC_address[LOC_num] & 0x00FF);
-      DCC_command_buffer[3] = ((LOC_address[LOC_num] & 0xFF00) >> 8);
+      DCC_command_buffer[2] = (byte)(LOC_address[LOC_num] & 0x00FF);
+      DCC_command_buffer[3] = (byte)((LOC_address[LOC_num] & 0xFF00) >> 8);
       DCC_command_buffer[4] = (LOC_speed[LOC_num]);
       DCC_command_buffer[5] = LOC_function_and_dir[LOC_num];
-      DCC_command_buffer[6] = 0x0D;
-      DCC_command_buffer[7] = '\n';
-      //TODO remove comment Serial.write(DCC_command_buffer);
+      digitalWrite(LED_orange, LOW);
+      Serial.write(DCC_command_buffer, 6);
+      digitalWrite(LED_orange, HIGH);
+      if (Serial.available() != 0 && Response) {
+        if (Serial.read() == 0) {
+          break;
+        } else {
+          print_string_LCD("RX Error LOC", 0x80);
+          delay(500);
+        }
+      }
+      digitalWrite(LED_orange, HIGH);
     }
+    lastPotiVal[(deadzone_and_num >> 6) + (4 * LOC_num)] = poti_val;
+  }
+  if ((deadzone_and_num >> 6) == 3) {
+    deadzone_and_num = deadzone_and_num & 0x3F;
+  } else {
+    deadzone_and_num = deadzone_and_num + 0x40;
   }
   return return_changed;
 }
-
-
 
 void LCD_init4bit() {
   delay(15);              //Wait 15ms for LCD internal power supply
@@ -167,8 +228,7 @@ void LCD_init4bit() {
   PORTD = PORTD & 0x7F;   //Set enable low
   delay(5);               //Wait 5ms
   LCD_write(0x2C, false); //set 4bit,2lines,5x10font
-  LCD_blink_on(); //turn on display, no cursor, no blink cursor
-  LCD_write(0x06, false); //increment DD-Ram address to write from left to right
+  LCD_blink_on();         //turn on display, no cursor, no blink cursor
   LCD_clear();
 }
 
@@ -196,10 +256,10 @@ void LCD_write(byte data, boolean RS) {
 }
 
 void update_LOC_icon(byte LOC_num) {
-  if (LOC_address[LOC_num] < 101) {          //only 100 icons are stored in 1kbyte (1000)byte
+  if (LOC_address[LOC_num] < 101) {          //only 100 icons can be stored in 1kbyte (1000)byte (5*8*2 * 100)
     LCD_write(0x40 + (LOC_num << 4), false); //16 lines for each double icon of 8 rows each
     for (byte LCD_row = 0; LCD_row < 16; LCD_row++) {
-      if (((LCD_row * 5) % 8) > 3) { //if 5 bit cross 8 byte border of eeprom TODO TEST THIS
+      if (((LCD_row * 5) % 8) > 3) { //if 5 bit cross 8 byte border of eeprom
         LCD_write(((EEPROM.read(((LOC_address[LOC_num] - 1) * 10) + ((LCD_row * 5) / 8)) << (((LCD_row * 5) % 8) - 3)) | (EEPROM.read(((LOC_address[LOC_num] - 1) * 10) + (((LCD_row * 5) / 8) + 1)) >> (11 - ((LCD_row * 5) % 8)))), true);
       } else {
         LCD_write((EEPROM.read(((LOC_address[LOC_num] - 1) * 10) + ((LCD_row * 5) / 8)) >> (3 - ((LCD_row * 5) % 8))), true); //read data from byte and shift accordingly
@@ -208,7 +268,11 @@ void update_LOC_icon(byte LOC_num) {
   } else {
     LCD_write(0x40 + (LOC_num * 20), false);
     for (byte LCD_row = 0; LCD_row < 20; LCD_row++) {
-      LCD_write(LCD_row, true);
+      if (LCD_row % 2 == 0) {
+        LCD_write(0xFF, true);
+      } else {
+        LCD_write(0x00, true);
+      }
     }
   }
 }
@@ -316,13 +380,21 @@ void Menu_ChangeFunction() {
         refresh = 0x01; //trigger refresh
         break;
       case AliasRight:
-        if (Position == 0) {
+        if (Position != 0) {
           Position--;
         }
         refresh = 0x01; //trigger refresh
         break;
       case (AliasLeft+AliasRight):
         LOC_function_and_dir[SelectedLOC] = LOC_function_and_dir[SelectedLOC] ^ (0x01 << Position); //toggle it on or off
+        DCC_command_buffer[0] = 'X';
+        DCC_command_buffer[1] = 0x80; //Loc command
+        DCC_command_buffer[2] = (byte)(LOC_address[SelectedLOC] & 0x00FF);
+        DCC_command_buffer[3] = (byte)((LOC_address[SelectedLOC] & 0xFF00) >> 8);
+        DCC_command_buffer[4] = (LOC_speed[SelectedLOC]);
+        DCC_command_buffer[5] = LOC_function_and_dir[SelectedLOC];
+        DCC_command_buffer[7] = '\r';
+        Serial.write(DCC_command_buffer, 8);
         refresh = 0x01;
         break;
       default:
@@ -350,7 +422,7 @@ void Menu_ChangeAddress() {
       print_string_LCD("Address of LOC ", 0x80);
       LCD_write(0x30 + (SelectedLOC + 1), true);
       number_of_shifts = 0;
-      LCD_write(0xC4, false); //TODO move right?
+      LCD_write(0xC4, false);
       written_address = 0;
       while (digitNum != 0) {
         tempDigit = ((LOC_address_new - written_address) / tenthpower(--digitNum));
@@ -369,17 +441,16 @@ void Menu_ChangeAddress() {
     switch (getButtonInput()) {
       case AliasStop:
         Menu_Stop();
-        refresh = true;
+        refresh = 0x01;
         break;
       case AliasMenu:
         { //is needed fot int eeprom address
           LOC_address[SelectedLOC] = LOC_address_new;
           int EEPROM_address = 0x03E8;
-          for (byte LOC_num = 0; LOC_num < 4; LOC_num++) {                                                     //store LOC addresses
+          for (byte LOC_num = 0; LOC_num < 4; LOC_num++) {    //store LOC addresses
             EEPROM.update(EEPROM_address++, ((LOC_address[LOC_num] & 0xFF00) >> 8));
             EEPROM.update(EEPROM_address++, (LOC_address[LOC_num] & 0x00FF));
           }
-          return;
         }
         LCD_clear();
         return;
@@ -425,7 +496,7 @@ void Menu_ChangeAddress() {
         refresh = 0x01;
         break;
       default:
-        refresh = 0x02;
+        refresh = 0x00;
         break;
     }
     refresh_Poti();
@@ -437,11 +508,25 @@ void Menu_ChangeIcon() {
   byte IconCache[16];
   if (LOC_address[SelectedLOC] < 101) {
     for (byte LCD_row = 0; LCD_row < 16; LCD_row++) {
-      if (((LCD_row * 5) % 8) > 3) { //if 5 bit cross 8 byte border of eeprom TODO TEST THIS
+      if (((LCD_row * 5) % 8) > 3) {
         IconCache[LCD_row] = 0x1F & ((EEPROM.read(((LOC_address[SelectedLOC] - 1) * 10) + ((LCD_row * 5) / 8)) << (((LCD_row * 5) % 8) - 3)) | (EEPROM.read(((LOC_address[SelectedLOC] - 1) * 10) + (((LCD_row * 5) / 8) + 1)) >> (11 - ((LCD_row * 5) % 8))));
       } else {
         IconCache[LCD_row] = 0x1F & (EEPROM.read(((LOC_address[SelectedLOC] - 1) * 10) + ((LCD_row * 5) / 8)) >> (3 - ((LCD_row * 5) % 8))); //read data from byte and shift accordingly
       }
+    }
+  } else {
+    print_string_LCD("Loc Address >101", 0x80);
+    print_string_LCD("Press 'MENU'  ! ", 0xC0);
+    while (true) {
+      switch (getButtonInput()) {
+        case AliasStop:
+          Menu_Stop();
+          break;
+        case AliasMenu:
+          return;
+          break;
+      }
+      refresh_Poti();
     }
   }
   byte refresh = 0x01;
@@ -461,9 +546,9 @@ void Menu_ChangeIcon() {
       byte pixel = 4;
       do {
         if ((IconCache[Position / 5] & (0x01 << pixel)) > 0) {
-          LCD_write('x', true); //set (black box)
+          LCD_write(0xDB, true); //print box
         } else {
-          LCD_write(0xF8, true); //not set
+          LCD_write(0x5F, true); //print _
         }
       } while ((pixel--) != 0);
       for (byte shift = ((Position % 5) + 1); shift != 0; shift--) {
@@ -475,7 +560,7 @@ void Menu_ChangeIcon() {
         Menu_Stop();
         refresh = 0x01;
         break;
-      case AliasMenu://TODO check if loco is valid <1000 for settings edit
+      case AliasMenu:
         {
           unsigned int EEPROM_address = (LOC_address[SelectedLOC] - 1) * 10; //because Loc addresses start at 1
           byte ICONrow = 0;
@@ -485,8 +570,12 @@ void Menu_ChangeIcon() {
             do { //if we don't need to shift a bit right we are not finished yet
               value_to_store = value_to_store | (IconCache[ICONrow++] << (((3 + 8) - byte_offset) % 8));
               byte_offset = ((ICONrow * 5) % 8);
-            } while ((11 - byte_offset) % 8 < 3); //we need to shift value to far to the left
+            } while ((((11 - byte_offset) % 8) < 3) && (byte_offset != 3)); //test 2
             value_to_store = value_to_store | (IconCache[ICONrow] >> (byte_offset - 3));
+            if (byte_offset == 3) { //we have finished one icon
+              byte_offset = 0; //reset offset for new icon
+              ICONrow++; //avoid that row is stored again
+            }
             EEPROM.update(EEPROM_address++, value_to_store);
             value_to_store = 0x00;
           }
@@ -503,8 +592,12 @@ void Menu_ChangeIcon() {
             do { //if we don't need to shift a bit right we are not finished yet
               value_to_store = value_to_store | (IconCache[ICONrow++] << (((3 + 8) - byte_offset) % 8));
               byte_offset = ((ICONrow * 5) % 8);
-            } while ((11 - byte_offset) % 8 < 3); //we need to shift value to far to the left
+            } while ((((11 - byte_offset) % 8) < 3) && (byte_offset != 3)); //test 2
             value_to_store = value_to_store | (IconCache[ICONrow] >> (byte_offset - 3));
+            if (byte_offset == 3) { //we have finished one icon
+              byte_offset = 0; //reset offset for new icon
+              ICONrow++; //avoid that row is stored again
+            }
             EEPROM.update(EEPROM_address++, value_to_store);
             value_to_store = 0x00;
           }
@@ -512,19 +605,33 @@ void Menu_ChangeIcon() {
         if ((SelectedLOC++) == 3) {
           SelectedLOC = 0;
         }
-        for (byte LCD_row = 0; LCD_row < 16; LCD_row++) {
-          for (byte LCD_row = 0; LCD_row < 16; LCD_row++) {
-            if (((LCD_row * 5) % 8) > 3) { //if 5 bit cross 8 byte border of eeprom TODO TEST THIS
-              IconCache[LCD_row] = 0x1F & ((EEPROM.read(((LOC_address[SelectedLOC] - 1) * 10) + ((LCD_row * 5) / 8)) << (((LCD_row * 5) % 8) - 3)) | (EEPROM.read(((LOC_address[SelectedLOC] - 1) * 10) + (((LCD_row * 5) / 8) + 1)) >> (11 - ((LCD_row * 5) % 8))));
-            } else {
-              IconCache[LCD_row] = 0x1F & (EEPROM.read(((LOC_address[SelectedLOC] - 1) * 10) + ((LCD_row * 5) / 8)) >> (3 - ((LCD_row * 5) % 8))); //read data from byte and shift accordingly
+        if (LOC_address[SelectedLOC] > 101) {
+          LCD_clear();
+          print_string_LCD("Loc Address >101", 0x80);
+          print_string_LCD("Press 'MENU'  ! ", 0xC0);
+          while (true) {
+            switch (getButtonInput()) {
+              case AliasStop:
+                Menu_Stop();
+                break;
+              case AliasMenu:
+                return;
+                break;
             }
+            refresh_Poti();
+          }
+        }
+        for (byte LCD_row = 0; LCD_row < 16; LCD_row++) {
+          if (((LCD_row * 5) % 8) > 3) { //if 5 bit cross 8 byte border of eeprom
+            IconCache[LCD_row] = 0x1F & ((EEPROM.read(((LOC_address[SelectedLOC] - 1) * 10) + ((LCD_row * 5) / 8)) << (((LCD_row * 5) % 8) - 3)) | (EEPROM.read(((LOC_address[SelectedLOC] - 1) * 10) + (((LCD_row * 5) / 8) + 1)) >> (11 - ((LCD_row * 5) % 8))));
+          } else {
+            IconCache[LCD_row] = 0x1F & (EEPROM.read(((LOC_address[SelectedLOC] - 1) * 10) + ((LCD_row * 5) / 8)) >> (3 - ((LCD_row * 5) % 8))); //read data from byte and shift accordingly
           }
         }
         refresh = 0x01;
         break;
       case AliasLeft:
-        if ((Position++) == 59) {
+        if ((Position++) == 79) {
           Position = 0;
         }
         refresh = 0x01;
@@ -532,8 +639,10 @@ void Menu_ChangeIcon() {
       case AliasRight:
         if (Position != 0) {
           Position--;
-          refresh = 0x01;
+        } else {
+          Position = 79;
         }
+        refresh = 0x01;
         break;
       case (AliasLeft+AliasRight):
         IconCache[Position / 5] = IconCache[Position / 5] ^ (0x01 << (Position % 5));
@@ -558,16 +667,16 @@ void setup() {
   pinMode(ButtonLOCswitch, INPUT_PULLUP);
   pinMode(ButtonMenu, INPUT_PULLUP);
   pinMode(ButtonStop, INPUT_PULLUP);
-  digitalWrite(LEDG1, HIGH);
-  pinMode(LEDG1, OUTPUT);
-  digitalWrite(LEDG2, LOW);
-  pinMode(LEDG2, OUTPUT);
-  digitalWrite(LEDO, HIGH);
-  pinMode(LEDO, OUTPUT);
+  digitalWrite(LED_orange, HIGH);
+  pinMode(LED_orange, OUTPUT);
+  digitalWrite(LED_green, LOW);
+  pinMode(LED_green, OUTPUT);
+  digitalWrite(LED_red, HIGH);
+  pinMode(LED_red, OUTPUT);
   unsigned int EEPROM_address = 0x03E8;                                                                       //Address after first 100 stored loco data (1000) (directly after icons)
   LCD_init4bit();                                                                                     //initialize LCD display
-  Serial.begin(115200, SERIAL_8N2);                                                                   //Init DCC Serial Interface
-  for (byte LOC_num = 0; LOC_num < 4; LOC_num++) {                                                     //load LOC addresses TODO impelement read function data
+  Serial.begin(19200, SERIAL_8N2);                                                                   //Init DCC Serial Interface
+  for (byte LOC_num = 0; LOC_num < 4; LOC_num++) {                                                     //load LOC addresses
     LOC_address[LOC_num] = (EEPROM.read(EEPROM_address) << 8) | (EEPROM.read(EEPROM_address + 1));    //combine data to address
     if (LOC_address[LOC_num] > 10239) {
       LOC_address[LOC_num] = LOC_num + 1;
@@ -575,6 +684,7 @@ void setup() {
     update_LOC_icon(LOC_num);                                                                         //load LOC icons
     EEPROM_address = EEPROM_address + 2;                                                              //increment to next loco (address has 2 bytes (+2))
   }
+  Menu_Stop();
   Menu_None();
 }
 
@@ -628,7 +738,7 @@ void Menu_None() {
         }
       }
     }
-    if (refresh > 1) { //routin for cursor positioning
+    if (refresh != 0) { //routin for cursor positioning
       switch (SelectedLOC) {
         case 0:
           LCD_write(0x82, false);
