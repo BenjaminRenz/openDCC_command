@@ -27,3 +27,5 @@ What does which button do?
 -"Right":               "
 -"Menu":             Cycles through the menus: Normal Operation, Address change, Function change, Icon change and back to Normal Op
 -"Left+Right" = "Up":toggles bits  or  increases digits / decreases them
+
+#If you have any questions, trouble getting it to work, improvements or found a bug please contact me :)
