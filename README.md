@@ -1,5 +1,5 @@
 # openDCC_command
-One Arduino and four potientiometers are the low cost solution to profit from your digitalized railroad, because you now can controll 4 lockos simultaneousely. With four dedicated potentiometers you can give your openDCC-Controller the commands.
+One Arduino nano and four potientiometers are the low cost solution to profit from your digitalized railroad, because you now can controll 4 lockos simultaneousely. With four dedicated potentiometers you can give your openDCC-Controller the commands.
 
 # Material
 4x Potentiometer
